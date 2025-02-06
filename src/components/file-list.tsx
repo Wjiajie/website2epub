@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@/lib/utils'
 import { createClient } from '@supabase/supabase-js'
@@ -21,11 +21,7 @@ export function FileList() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ))
 
-  useEffect(() => {
-    fetchPages()
-  }, [])
-
-  const fetchPages = async () => {
+  const fetchPages = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('pages')
@@ -40,7 +36,11 @@ export function FileList() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
+
+  useEffect(() => {
+    fetchPages()
+  }, [fetchPages])
 
   const formatPageContent = (page: Page) => {
     const cleanContent = page.content

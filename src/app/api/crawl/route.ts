@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 import { URL } from 'url'
 import puppeteer from 'puppeteer'
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -18,8 +20,15 @@ const turndown = new TurndownService({
 // 用于存储已访问的URL
 const visitedUrls = new Set<string>()
 
+// 修改类型定义，将 any[] 改为具体类型
+interface CrawledPage {
+  url: string;
+  title: string;
+  content: string;
+}
+
 // 获取页面内容并转换为Markdown
-async function fetchAndConvertPage(url: string, retries = 3) {
+async function fetchAndConvertPage(url: string) {
   let browser
   try {
     console.log(`Fetching page: ${url}`)
@@ -136,9 +145,9 @@ function findLinks($: cheerio.CheerioAPI, baseUrl: string): string[] {
 }
 
 // 递归抓取页面
-async function crawlPages(startUrl: string, maxPages = 20) {
+async function crawlPages(startUrl: string, maxPages = 20): Promise<CrawledPage[]> {
   console.log(`Starting crawl from ${startUrl}`)
-  const pages: any[] = []
+  const pages: CrawledPage[] = []
   const queue = [startUrl]
   visitedUrls.clear() // 清除之前的记录
 
@@ -161,8 +170,10 @@ async function crawlPages(startUrl: string, maxPages = 20) {
       }
 
       // 将新的链接添加到队列
-      queue.push(...page.links.slice(0, maxPages))
-      console.log(`Queue size after adding new links: ${queue.length}`)
+      if (page.links && page.links.length > 0) {
+        queue.push(...page.links.slice(0, maxPages))
+        console.log(`Queue size after adding new links: ${queue.length}`)
+      }
     }
   }
 
@@ -185,7 +196,7 @@ export async function POST(request: Request) {
 
     try {
       new URL(url) // 验证URL格式
-    } catch (error) {
+    } catch {
       return NextResponse.json(
         { error: 'Invalid URL format' },
         { status: 400 }
