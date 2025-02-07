@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
-import { supabase } from '@/lib/supabase/client'
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -31,9 +30,7 @@ export function PaymentForm({ amount }: { amount: number }) {
       if (!stripe) throw new Error('Stripe 加载失败')
 
       const { error: stripeError } = await stripe.confirmPayment({
-        elements: {
-          clientSecret,
-        },
+        clientSecret,
         confirmParams: {
           return_url: `${window.location.origin}/payment/success`,
         },

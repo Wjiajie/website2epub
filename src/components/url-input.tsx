@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2, X } from 'lucide-react'
+import { createClient } from '@supabase/supabase-js'
 
 interface Page {
   id: string
@@ -24,6 +25,40 @@ interface DialogProps {
 
 function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
   const [folderName, setFolderName] = useState('')
+  const [existingFolders, setExistingFolders] = useState<string[]>([])
+  const [selectedFolder, setSelectedFolder] = useState<string>('')
+  const [isNewFolder, setIsNewFolder] = useState(true)
+  const [supabase] = useState(() => createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  ))
+
+  useEffect(() => {
+    async function fetchFolders() {
+      try {
+        const { data, error } = await supabase
+          .from('pages')
+          .select('folder')
+          .not('folder', 'is', null)
+          .order('folder')
+
+        if (error) throw error
+
+        // 提取唯一的文件夹名称
+        const uniqueFolders = Array.from(new Set(data.map(item => item.folder))).filter(Boolean)
+        setExistingFolders(uniqueFolders as string[])
+      } catch (error) {
+        console.error('Error fetching folders:', error)
+      }
+    }
+
+    if (isOpen) {
+      fetchFolders()
+      setFolderName('')
+      setSelectedFolder('')
+      setIsNewFolder(true)
+    }
+  }, [isOpen, supabase])
 
   if (!isOpen) return null
 
@@ -31,7 +66,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
       <div className="bg-background p-6 rounded-lg w-[480px] space-y-4">
         <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold">为抓取的页面创建文件夹</h3>
+          <h3 className="text-lg font-semibold">为抓取的页面选择文件夹</h3>
           <button onClick={onClose} className="p-1 hover:bg-accent rounded-full">
             <X className="w-4 h-4" />
           </button>
@@ -48,19 +83,61 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
           </ul>
         </div>
 
-        <div className="space-y-2">
-          <label htmlFor="folderName" className="text-sm font-medium">
-            文件夹名称
-          </label>
-          <input
-            id="folderName"
-            type="text"
-            value={folderName}
-            onChange={(e) => setFolderName(e.target.value)}
-            placeholder="请输入文件夹名称..."
-            className="w-full px-3 py-2 border rounded-md"
-            autoFocus
-          />
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <button
+              onClick={() => setIsNewFolder(true)}
+              className={`px-4 py-2 rounded-md ${
+                isNewFolder ? 'bg-primary text-primary-foreground' : 'bg-accent'
+              }`}
+            >
+              新建文件夹
+            </button>
+            <button
+              onClick={() => setIsNewFolder(false)}
+              className={`px-4 py-2 rounded-md ${
+                !isNewFolder ? 'bg-primary text-primary-foreground' : 'bg-accent'
+              }`}
+            >
+              选择已有文件夹
+            </button>
+          </div>
+
+          {isNewFolder ? (
+            <div className="space-y-2">
+              <label htmlFor="folderName" className="text-sm font-medium">
+                新文件夹名称
+              </label>
+              <input
+                id="folderName"
+                type="text"
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                placeholder="请输入文件夹名称..."
+                className="w-full px-3 py-2 border rounded-md"
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label htmlFor="existingFolder" className="text-sm font-medium">
+                选择文件夹
+              </label>
+              <select
+                id="existingFolder"
+                value={selectedFolder}
+                onChange={(e) => setSelectedFolder(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">请选择文件夹...</option>
+                {existingFolders.map(folder => (
+                  <option key={folder} value={folder}>
+                    {folder}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2">
@@ -72,11 +149,12 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
           </button>
           <button
             onClick={() => {
-              if (folderName.trim()) {
-                onConfirm(folderName.trim())
+              const finalFolder = isNewFolder ? folderName.trim() : selectedFolder
+              if (finalFolder) {
+                onConfirm(finalFolder)
               }
             }}
-            disabled={!folderName.trim()}
+            disabled={isNewFolder ? !folderName.trim() : !selectedFolder}
             className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
           >
             确认

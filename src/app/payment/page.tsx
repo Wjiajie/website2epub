@@ -7,4 +7,4 @@ export default function PaymentPage() {
       <PaymentForm amount={9.99} />
     </div>
   )
-} 
+}
