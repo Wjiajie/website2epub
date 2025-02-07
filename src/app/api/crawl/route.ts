@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import * as cheerio from 'cheerio'
 import TurndownService from 'turndown'
 import { createClient } from '@supabase/supabase-js'
@@ -14,10 +14,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const turndown = new TurndownService({
-  headingStyle: 'atx',
-  codeBlockStyle: 'fenced'
-})
+const turndownService = new TurndownService()
 
 // 用于存储已访问的URL
 const visitedUrls = new Set<string>()
@@ -67,7 +64,7 @@ async function fetchAndConvertPage(url: string) {
     $('script, style, iframe, noscript').remove()
     
     // 转换为 Markdown
-    const markdown = turndown.turndown($.html())
+    const markdown = turndownService.turndown($.html())
       .replace(/\n{3,}/g, '\n\n') // 移除多余的空行
       .trim()
     
@@ -153,85 +150,36 @@ async function crawlPages(startUrl: string, maxPages = 20): Promise<CrawledPage[
   return pages
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    console.log('Received crawl request')
     const { url } = await request.json()
-    console.log(`Starting crawl for URL: ${url}`)
 
-    if (!url) {
-      return NextResponse.json(
-        { error: 'URL is required' },
-        { status: 400 }
-      )
-    }
+    console.log('Received crawl request')
+    console.log('Starting crawl for URL:', url)
 
-    try {
-      new URL(url) // 验证URL格式
-    } catch {
-      return NextResponse.json(
-        { error: 'Invalid URL format' },
-        { status: 400 }
-      )
-    }
+    // 抓取页面
+    const response = await fetch(url)
+    const html = await response.text()
+    console.log('Page fetched, HTML length:', html.length)
 
-    const page = await fetchAndConvertPage(url)
-    if (!page) {
-      return NextResponse.json(
-        { error: '无法从提供的URL提取内容。这可能是因为：\n1. 网站加载时间过长\n2. 网站需要认证\n3. 网站阻止了自动访问' },
-        { status: 400 }
-      )
-    }
+    // 解析 HTML
+    const $ = cheerio.load(html)
+    const title = $('title').text()
+    
+    // 获取主要内容
+    const content = turndownService.turndown($('main').html() || '')
+    console.log('Markdown content length:', content.length)
 
-    // 保存页面
-    console.log(`Saving page to Supabase`)
-    try {
-      const { data, error } = await supabase
-        .from('pages')
-        .insert([{
-          url: page.url,
-          title: page.title,
-          content: page.content
-        }])
-        .select()
-
-      if (error) {
-        console.error('Supabase error:', error)
-        throw error
-      }
-
-      console.log('Successfully saved to Supabase')
-      return NextResponse.json(data)
-    } catch (error) {
-      console.error('Supabase error:', error)
-      // 如果是 folder 列不存在的错误，尝试创建列
-      if (error instanceof Error && error.message.includes("Could not find the 'folder' column")) {
-        try {
-          // 创建 folder 列
-          await supabase.rpc('create_folder_column')
-          
-          // 重试保存
-          const { data, error: retryError } = await supabase
-            .from('pages')
-            .insert([{
-              url: page.url,
-              title: page.title,
-              content: page.content
-            }])
-            .select()
-
-          if (retryError) throw retryError
-          return NextResponse.json(data)
-        } catch (retryError) {
-          throw retryError
-        }
-      }
-      throw error
-    }
+    // 只返回解析后的数据，不保存到数据库
+    return Response.json({
+      title,
+      url,
+      content
+    })
   } catch (error) {
-    console.error('Error in POST handler:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : '处理URL时出错' },
+    console.error('Error in crawl:', error)
+    return Response.json(
+      { error: error instanceof Error ? error.message : '抓取失败' },
       { status: 500 }
     )
   }

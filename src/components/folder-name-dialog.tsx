@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, X, FileText } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
+import { X, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase/client'
 
 interface Page {
   id: string
@@ -13,26 +13,18 @@ interface Page {
   folder: string | null
 }
 
-interface UrlInputProps {
-  onPagesUpdate: (pages: Page[]) => void
-}
-
-interface DialogProps {
+interface FolderNameDialogProps {
   isOpen: boolean
   onClose: () => void
   onConfirm: (folderName: string) => void
   pages: Page[]
 }
 
-function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
+export function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: FolderNameDialogProps) {
   const [folderName, setFolderName] = useState('')
   const [existingFolders, setExistingFolders] = useState<string[]>([])
   const [selectedFolder, setSelectedFolder] = useState<string>('')
   const [isNewFolder, setIsNewFolder] = useState(true)
-  const [supabase] = useState(() => createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  ))
 
   useEffect(() => {
     async function fetchFolders() {
@@ -60,7 +52,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
         setFolderName('')
       }
     }
-  }, [isOpen, isNewFolder, supabase])
+  }, [isOpen, isNewFolder])
 
   // 切换模式时的处理
   const handleModeChange = (newMode: boolean) => {
@@ -78,13 +70,6 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
   const finalFolder = isNewFolder ? folderName.trim() : selectedFolder
   const isValid = finalFolder !== ''
 
-  const handleConfirm = () => {
-    if (isValid) {
-      onConfirm(finalFolder)
-      // 不需要在这里重置状态，因为对话框会被关闭
-    }
-  }
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl w-full max-w-lg overflow-hidden">
@@ -100,7 +85,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
         </div>
 
         {/* 页面预览 */}
-        <div className="px-6 py-4 border-b bg-blue-50/50">
+        <div className="px-6 py-4 bg-blue-50/50 border-b">
           <div className="flex items-center gap-2 text-blue-600 mb-2">
             <FileText className="w-4 h-4" />
             <span className="font-medium">已抓取 {pages.length} 个页面</span>
@@ -123,7 +108,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
               className={cn(
                 "flex-1 px-4 py-2 text-sm rounded-md transition-colors",
                 isNewFolder
-                  ? "bg-white shadow-sm font-medium"
+                  ? "bg-white border font-medium"
                   : "text-gray-600 hover:bg-gray-100"
               )}
             >
@@ -134,7 +119,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
               className={cn(
                 "flex-1 px-4 py-2 text-sm rounded-md transition-colors",
                 !isNewFolder
-                  ? "bg-white shadow-sm font-medium"
+                  ? "bg-white border font-medium"
                   : "text-gray-600 hover:bg-gray-100"
               )}
             >
@@ -189,7 +174,7 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
             取消
           </button>
           <button
-            onClick={handleConfirm}
+            onClick={() => isValid && onConfirm(finalFolder)}
             disabled={!isValid}
             className={cn(
               "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
@@ -203,151 +188,5 @@ function FolderNameDialog({ isOpen, onClose, onConfirm, pages }: DialogProps) {
         </div>
       </div>
     </div>
-  )
-}
-
-interface CrawledPage {
-  title: string
-  url: string
-  content: string
-}
-
-export function UrlInput({ onPagesUpdate }: UrlInputProps) {
-  const [url, setUrl] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [showDialog, setShowDialog] = useState(false)
-  const [newPages, setNewPages] = useState<CrawledPage[]>([])
-  const [supabase] = useState(() => createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  ))
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    try {
-      const response = await fetch('/api/crawl', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || '抓取失败')
-      }
-
-      const data = await response.json()
-      // 此时只保存到临时状态，不写入数据库
-      setNewPages([{
-        title: data.title,
-        url: data.url,
-        content: data.content
-      }])
-      setShowDialog(true)
-      setUrl('')
-    } catch (error) {
-      console.error('Error:', error)
-      setError(error instanceof Error ? error.message : '未知错误')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleFolderNameConfirm = async (folderName: string) => {
-    try {
-      // 先关闭对话框
-      setShowDialog(false)
-      setNewPages([])
-
-      // 保存页面数据到数据库
-      const savePromises = newPages.map(async (page) => {
-        const { data, error } = await supabase
-          .from('pages')
-          .insert([{
-            title: page.title,
-            url: page.url,
-            content: page.content,
-            folder: folderName
-          }])
-          .select()
-
-        if (error) {
-          console.error('保存页面失败:', error)
-          throw error
-        }
-
-        return data[0]
-      })
-
-      const savedPages = await Promise.all(savePromises)
-      
-      // 更新父组件状态
-      onPagesUpdate(savedPages)
-    } catch (error) {
-      console.error('保存页面失败:', error)
-      setError('保存页面失败')
-      // 如果保存失败，重新打开对话框
-      setShowDialog(true)
-    }
-  }
-
-  return (
-    <>
-      <form onSubmit={handleSubmit} className="w-full">
-        <div className="flex gap-4">
-          <div className="flex-1 relative">
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="输入网站URL..."
-              className="w-full px-4 py-2 pr-12 border rounded-lg outline-none shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-              required
-            />
-            {error && (
-              <p className="absolute left-0 -bottom-6 text-sm text-red-500">{error}</p>
-            )}
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:hover:bg-blue-500 shadow-sm transition-colors flex items-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>抓取中...</span>
-              </>
-            ) : (
-              <>
-                <span>开始抓取</span>
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-
-      <FolderNameDialog
-        isOpen={showDialog}
-        onClose={() => {
-          setShowDialog(false)
-          setNewPages([])
-        }}
-        onConfirm={handleFolderNameConfirm}
-        pages={newPages.map(page => ({
-          id: '',
-          title: page.title,
-          url: page.url,
-          content: page.content,
-          folder: null
-        }))}
-      />
-    </>
   )
 } 
